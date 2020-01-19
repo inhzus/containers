@@ -30,8 +30,28 @@ TEST(SkipList, Template) {
 }
 
 TEST(SkipList, Insert) {
-  yaldb::SkipList<int> skip_list;
-  ASSERT_TRUE(skip_list.Insert(1) != skip_list.end());
-  ASSERT_TRUE(skip_list.Insert(2) != skip_list.end());
-  ASSERT_TRUE(skip_list.Insert(1) == skip_list.end());
+  yaldb::SkipList<size_t> skip_list;
+  const size_t kLength = 1024;
+  for (size_t i = 0; i < kLength; ++i) {
+    auto it = skip_list.Insert(i);
+    ASSERT_NE(it, skip_list.end());
+    ASSERT_EQ(*it, i);
+    ASSERT_EQ(skip_list.size(), i + 1);
+  }
+  auto it = skip_list.begin();
+  for (size_t i = 0; i < kLength; ++i, ++it) {
+    ASSERT_NE(it, skip_list.end());
+    ASSERT_EQ(*it, i);
+  }
+  for (size_t i = 0; i < kLength; ++i) {
+    ASSERT_EQ(skip_list.Insert(i), skip_list.end());
+  }
+  for (size_t i = 0; i < kLength; ++i) {
+    ASSERT_NE(skip_list.Erase(i), skip_list.end());
+    ASSERT_EQ(skip_list.size(), kLength - i - 1);
+  }
+  for (size_t i = 0; i < kLength; ++i) {
+    ASSERT_EQ(skip_list.size(), i);
+    ASSERT_NE(skip_list.Insert(i), skip_list.end());
+  }
 }

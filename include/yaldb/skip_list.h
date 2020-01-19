@@ -51,8 +51,10 @@ class SkipListIterator {
   SkipListNode<std::remove_const_t<T>> *node_;
 
  public:
-  explicit SkipListIterator(SkipListNode<std::remove_const_t<T>> *node)
-      : node_(node) {}
+  explicit SkipListIterator(SkipListNode<std::remove_const_t<T>> *node) :
+      node_(node) {}
+  SkipListIterator(const SkipListIterator &it) :
+      node_(it.node_) {}
   T &operator*() { return node_->value; }
   const T &operator*() const { return node_->value; }
   T *operator->() { return &node_->value; }
@@ -76,13 +78,17 @@ class SkipListIterator {
     return it;
   }
   template<typename U>
-  bool operator==(const SkipListIterator<U> &it) {
+  bool operator==(const SkipListIterator<U> &it) const {
     return node_ == it.node_;
   }
   template<typename U>
-  bool operator!=(const SkipListIterator<U> &it) {
+  bool operator!=(const SkipListIterator<U> &it) const {
     return node_ != it.node_;
   }
+//  template<typename U>
+//  friend bool operator==(SkipListIterator<T> lhs, SkipListIterator<U> rhs) {
+//    return lhs.node_ == rhs.node_;
+//  }
 };
 
 }  // namespace impl
@@ -97,6 +103,8 @@ class SkipList {
 
  private:
   [[nodiscard]] size_t RandomLevel() const;
+  [[nodiscard]] node_type *FindPrev(const T &value) const;
+  node_type *FindPrev(const T &value, node_type **prev) const;
 
   static constexpr double kRandomRatio = 0.5;
   static constexpr size_t kMaxLevel = 32;
@@ -110,12 +118,19 @@ class SkipList {
  public:
   explicit SkipList(Comp comp = std::less<T>());  // NOLINT
 
-  iterator begin() { return iterator(head_); }
-  [[nodiscard]] const_iterator begin() const { return const_iterator(head_); }
+  size_t size() const { return length_; }
+  iterator begin() { return iterator(head_->links[0].n); }
   iterator end() { return iterator(tail_); }
-  [[nodiscard]] const_iterator end() const { return const_iterator(tail_); }
+  [[nodiscard]] const_iterator begin() const {
+    return const_iterator(head_->links[0].n);
+  }
+  [[nodiscard]] const_iterator end() const {
+    return const_iterator(tail_);
+  }
 
   iterator Insert(T value);
+  iterator Erase(const T &value);
+  iterator Find(const T &value) const;
 };
 
 template<typename T, typename Comp>
@@ -126,6 +141,29 @@ size_t SkipList<T, Comp>::RandomLevel() const {
     ++level;
   }
   return level;
+}
+template<typename T, typename Comp>
+typename SkipList<T, Comp>::node_type *
+SkipList<T, Comp>::FindPrev(const T &value) const {
+  node_type *cur = head_;
+  for (size_t i = kMaxLevel - 1; i != size_t() - 1; --i) {
+    while (cur->links[i].n != tail_ && comp_(cur->links[i].n->value, value)) {
+      cur = cur->links[i].n;
+    }
+  }
+  return cur;
+}
+template<typename T, typename Comp>
+typename SkipList<T, Comp>::node_type *
+SkipList<T, Comp>::FindPrev(const T &value, node_type **prev) const {
+  node_type *cur = head_;
+  for (size_t i = kMaxLevel - 1; i != size_t() - 1; --i) {
+    while (cur->links[i].n != tail_ && comp_(cur->links[i].n->value, value)) {
+      cur = cur->links[i].n;
+    }
+    prev[i] = cur;
+  }
+  return cur;
 }
 
 template<typename T, typename Comp>
@@ -142,21 +180,14 @@ SkipList<T, Comp>::SkipList(Comp comp) :
     head_->links[i].n = tail_;
   }
 }
-
 template<typename T, typename Comp>
 typename SkipList<T, Comp>::iterator
 SkipList<T, Comp>::Insert(T value) {
-  auto prev = std::make_unique<node_type *[]>(kMaxLevel);
-  node_type *cur = head_;
-  for (size_t i = kMaxLevel - 1; i != size_t() - 1; --i) {
-    while (cur->links[i].n != tail_ && comp_(cur->links[i].n->value, value)) {
-      cur = cur->links[i].n;
-    }
-    prev[i] = cur;
-  }
-  if (cur->links[0].n != tail_ &&
-      !comp_(cur->links[0].n->value, value) &&
-      !comp_(value, cur->links[0].n->value)) {
+  auto prev = std::make_unique<node_type *[]>(kMaxLevel);;
+  node_type *cur = FindPrev(value, prev.get()), *next = cur->links[0].n;
+  if (next != tail_ &&
+      !comp_(next->value, value) &&
+      !comp_(value, next->value)) {
     return end();
   }
   size_t level = RandomLevel();
@@ -165,8 +196,43 @@ SkipList<T, Comp>::Insert(T value) {
     node->links[i].n = prev[i]->links[i].n;
     prev[i]->links[i].n = node;
   }
-  node->links[0].n->back = cur;
+  next->back = cur;
+  ++length_;
   return iterator(node);
+}
+template<typename T, typename Comp>
+typename SkipList<T, Comp>::iterator
+SkipList<T, Comp>::Erase(const T &value) {
+  auto prev = std::make_unique<node_type *[]>(kMaxLevel);
+  FindPrev(value, prev.get());
+  node_type *node = nullptr;
+  for (size_t i = kMaxLevel - 1; i != size_t() - 1; --i) {
+    if (prev[i]->links[i].n != tail_ &&
+        !comp_(prev[i]->links[i].n->value, value) &&
+        !comp_(value, prev[i]->links[i].n->value)) {
+      node = prev[i]->links[i].n;
+      prev[i]->links[i].n = node->links[i].n;
+    }
+  }
+  if (node != nullptr) {
+    delete node;
+    --length_;
+    return iterator(prev[0]);
+  } else {
+    return end();
+  }
+}
+template<typename T, typename Comp>
+typename SkipList<T, Comp>::iterator
+SkipList<T, Comp>::Find(const T &value) const {
+  node_type *cur = FindPrev(value), *next = cur->links[0].n;
+  if (next != tail_ &&
+      !comp(next->value, value) &&
+      !comp(value, next->value)) {
+    return iterator(next);
+  } else {
+    return end();
+  }
 }
 
 void StaticTest() {
