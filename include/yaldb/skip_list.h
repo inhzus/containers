@@ -51,11 +51,17 @@ class SkipListIterator {
   SkipListNode<std::remove_const_t<T>> *node_;
 
  public:
-  SkipListIterator(const SkipListIterator &it) : node_(it.node_) {}
+//  SkipListIterator(const SkipListIterator &it) : node_(it.node_) {}
   explicit SkipListIterator(
       const SkipListIterator<std::remove_const_t<T>> &it) : node_(it.node_) {}
   explicit SkipListIterator(SkipListNode<std::remove_const_t<T>> *node) :
       node_(node) {}
+  SkipListIterator &
+  operator=(const SkipListIterator<std::remove_const_t<T>> &it) {
+    node_ = it.node_;
+    return *this;
+  }
+
   T &operator*() { return node_->value; }
   const T &operator*() const { return node_->value; }
   T *operator->() { return &node_->value; }
