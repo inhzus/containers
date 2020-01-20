@@ -44,6 +44,9 @@ TEST(SkipList, Insert) {
     ASSERT_EQ(*it, i);
   }
   for (size_t i = 0; i < kLength; ++i) {
+    ASSERT_NE(skip_list.Find(i), skip_list.end());
+  }
+  for (size_t i = 0; i < kLength; ++i) {
     ASSERT_EQ(skip_list.Insert(i), skip_list.end());
   }
   for (size_t i = 0; i < kLength; ++i) {

@@ -51,10 +51,11 @@ class SkipListIterator {
   SkipListNode<std::remove_const_t<T>> *node_;
 
  public:
+  SkipListIterator(const SkipListIterator &it) : node_(it.node_) {}
+  explicit SkipListIterator(
+      const SkipListIterator<std::remove_const_t<T>> &it) : node_(it.node_) {}
   explicit SkipListIterator(SkipListNode<std::remove_const_t<T>> *node) :
       node_(node) {}
-  SkipListIterator(const SkipListIterator &it) :
-      node_(it.node_) {}
   T &operator*() { return node_->value; }
   const T &operator*() const { return node_->value; }
   T *operator->() { return &node_->value; }
@@ -130,7 +131,10 @@ class SkipList {
 
   iterator Insert(T value);
   iterator Erase(const T &value);
-  iterator Find(const T &value) const;
+  iterator Find(const T &value);
+  const_iterator Find(const T &value) const {
+    return const_iterator(const_cast<SkipList *>(this)->Find(value));
+  }
 };
 
 template<typename T, typename Comp>
@@ -224,11 +228,11 @@ SkipList<T, Comp>::Erase(const T &value) {
 }
 template<typename T, typename Comp>
 typename SkipList<T, Comp>::iterator
-SkipList<T, Comp>::Find(const T &value) const {
+SkipList<T, Comp>::Find(const T &value) {
   node_type *cur = FindPrev(value), *next = cur->links[0].n;
   if (next != tail_ &&
-      !comp(next->value, value) &&
-      !comp(value, next->value)) {
+      !comp_(next->value, value) &&
+      !comp_(value, next->value)) {
     return iterator(next);
   } else {
     return end();
