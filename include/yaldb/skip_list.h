@@ -48,6 +48,9 @@ struct SkipListNode {
 template<typename T>
 class SkipListIterator {
  private:
+//  friend class SkipListNode<std::remove_const_t<T
+  template<typename> friend
+  class SkipListIterator;
   SkipListNode<std::remove_const_t<T>> *node_;
 
  public:
@@ -195,11 +198,11 @@ typename SkipList<T, Comp>::iterator
 SkipList<T, Comp>::Insert(T value) {
   auto prev = std::make_unique<node_type *[]>(kMaxLevel);;
   node_type *cur = FindPrev(value, prev.get()), *next = cur->links[0].n;
-  if (next != tail_ &&
-      !comp_(next->value, value) &&
-      !comp_(value, next->value)) {
-    return end();
-  }
+//  if (next != tail_ &&
+//      !comp_(next->value, value) &&
+//      !comp_(value, next->value)) {
+//    return end();
+//  }
   size_t level = RandomLevel();
   auto *node = new(level)node_type(std::move(value), level, cur);
   for (size_t i = 0; i < level; ++i) {
@@ -215,18 +218,29 @@ typename SkipList<T, Comp>::iterator
 SkipList<T, Comp>::Erase(const T &value) {
   auto prev = std::make_unique<node_type *[]>(kMaxLevel);
   FindPrev(value, prev.get());
-  node_type *node = nullptr;
+  node_type *first = tail_, *last = first;
   for (size_t i = kMaxLevel - 1; i != size_t() - 1; --i) {
-    if (prev[i]->links[i].n != tail_ &&
-        !comp_(prev[i]->links[i].n->value, value) &&
-        !comp_(value, prev[i]->links[i].n->value)) {
-      node = prev[i]->links[i].n;
+    for (node_type *node = prev[i]->links[i].n;
+         prev[i]->links[i].n != tail_ &&
+             !comp_(prev[i]->links[i].n->value, value) &&
+             !comp_(value, prev[i]->links[i].n->value);
+         node = prev[i]->links[i].n) {
       prev[i]->links[i].n = node->links[i].n;
+      if (i == 0) {
+        if (first == tail_) {
+          first = node;
+        }
+        last = node->links[i].n;
+      }
     }
   }
-  if (node != nullptr) {
-    delete node;
-    --length_;
+  if (first != last) {
+    while (first != last) {
+      node_type *tmp = first;
+      first = first->links[0].n;
+      delete tmp;
+      --length_;
+    }
     return iterator(prev[0]);
   } else {
     return end();

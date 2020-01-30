@@ -46,9 +46,9 @@ TEST(SkipList, Insert) {
   for (size_t i = 0; i < kLength; ++i) {
     ASSERT_NE(skip_list.Find(i), skip_list.end());
   }
-  for (size_t i = 0; i < kLength; ++i) {
-    ASSERT_EQ(skip_list.Insert(i), skip_list.end());
-  }
+//  for (size_t i = 0; i < kLength; ++i) {
+//    ASSERT_EQ(skip_list.Insert(i), skip_list.end());
+//  }
   for (size_t i = 0; i < kLength; ++i) {
     ASSERT_NE(skip_list.Erase(i), skip_list.end());
     ASSERT_EQ(skip_list.size(), kLength - i - 1);
@@ -57,4 +57,14 @@ TEST(SkipList, Insert) {
     ASSERT_EQ(skip_list.size(), i);
     ASSERT_NE(skip_list.Insert(i), skip_list.end());
   }
+}
+
+TEST(SkipList, Erase) {
+  yaldb::SkipList<size_t> skip_list;
+  const size_t value = 10;
+  for (size_t i = 0; i < 10; ++i) {
+    skip_list.Insert(value);
+  }
+  ASSERT_NE(skip_list.Erase(value), skip_list.end());
+  ASSERT_EQ(skip_list.size(), 0);
 }
