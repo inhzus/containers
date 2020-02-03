@@ -4,7 +4,7 @@
 
 #include "yaldb/skip_list.h"
 
-#include <gtest/gtest.h>
+#include <catch2/catch.hpp>
 
 #include <cstdio>
 #include <functional>
@@ -20,51 +20,70 @@ class _SkipList {
   }
 };
 
-TEST(SkipList, Template) {
+TEST_CASE("comparator as template", "[SkipList]") {
   struct cmp {
     bool operator()(int a, int b) {
       return a < b;
     }
   };
-  _SkipList<int, cmp> skip_list;
+  [[maybe_unused]] _SkipList<int, cmp> skip_list;
 }
 
-TEST(SkipList, Insert) {
+TEST_CASE("insertion and related components of SkipList", "[SkipList]") {
   yaldb::SkipList<size_t> skip_list;
-  const size_t kLength = 1024;
+  constexpr size_t kLength = 1024;
   for (size_t i = 0; i < kLength; ++i) {
     auto it = skip_list.Insert(i);
-    ASSERT_NE(it, skip_list.end());
-    ASSERT_EQ(*it, i);
-    ASSERT_EQ(skip_list.size(), i + 1);
+    REQUIRE_FALSE(it == skip_list.end());
+    REQUIRE(*it == i);
+    REQUIRE(skip_list.Size() == i + 1);
   }
   auto it = skip_list.begin();
   for (size_t i = 0; i < kLength; ++i, ++it) {
-    ASSERT_NE(it, skip_list.end());
-    ASSERT_EQ(*it, i);
+    REQUIRE_FALSE(it == skip_list.end());
+    REQUIRE(*it == i);
   }
   for (size_t i = 0; i < kLength; ++i) {
-    ASSERT_NE(skip_list.Find(i), skip_list.end());
-  }
-//  for (size_t i = 0; i < kLength; ++i) {
-//    ASSERT_EQ(skip_list.Insert(i), skip_list.end());
-//  }
-  for (size_t i = 0; i < kLength; ++i) {
-    ASSERT_NE(skip_list.Erase(i), skip_list.end());
-    ASSERT_EQ(skip_list.size(), kLength - i - 1);
+    REQUIRE_FALSE(skip_list.Find(i) == skip_list.end());
   }
   for (size_t i = 0; i < kLength; ++i) {
-    ASSERT_EQ(skip_list.size(), i);
-    ASSERT_NE(skip_list.Insert(i), skip_list.end());
+    REQUIRE_FALSE(skip_list.Erase(i) == skip_list.end());
+    REQUIRE(skip_list.Size() == kLength - i - 1);
+  }
+  for (size_t i = 0; i < kLength; ++i) {
+    REQUIRE(skip_list.Size() == i);
+    REQUIRE_FALSE(skip_list.Insert(i) == skip_list.end());
   }
 }
 
-TEST(SkipList, Erase) {
-  yaldb::SkipList<size_t> skip_list;
-  const size_t value = 10;
-  for (size_t i = 0; i < 10; ++i) {
-    skip_list.Insert(value);
+TEST_CASE("erasing element and related components of SkipList", "[SkipList]") {
+  constexpr size_t kCount = 20, kValue = 10;
+  SECTION("erase value") {
+    yaldb::SkipList<size_t> skip_list;
+    for (size_t i = 0; i < kValue; i++) {
+      skip_list.Insert(i);
+    }
+    for (size_t i = 0; i < kCount; i++) {
+      skip_list.Insert(kValue);
+    }
+    auto[first, last] = skip_list.EqualRange(kValue);
+    std::advance(first, kCount);
+    REQUIRE(first == last);
+    REQUIRE_FALSE(skip_list.Erase(kValue) == skip_list.end());
+    REQUIRE(skip_list.Size() == kValue);
+  }SECTION("erase iterator") {
+    yaldb::SkipList<size_t> skip_list;
+    for (size_t i = 0; i < kValue; ++i) {
+      skip_list.Insert(i);
+    }
+    for (size_t i = 0; i < kCount; ++i) {
+      skip_list.Insert(kValue);
+    }
+    auto[first, last] = skip_list.EqualRange(kValue);
+    size_t i = kCount + kValue;
+    for (auto it = first++; it != last; it = first++) {
+      REQUIRE(skip_list.Erase(it) != skip_list.end());
+      REQUIRE(skip_list.Size() == --i);
+    }
   }
-  ASSERT_NE(skip_list.Erase(value), skip_list.end());
-  ASSERT_EQ(skip_list.size(), 0);
 }
