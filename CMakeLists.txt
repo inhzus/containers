@@ -9,7 +9,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -Wall")
 
 execute_process(COMMAND
         sh -c
-        "find . | grep -E '\\.(cc|h)$' | xargs -I {} cpplint --root=include {}"
+        "find . | grep -E '\\.(cc|h)$' | xargs -I {} cpplint --root=include {} | grep -E '^\.\/'"
         WORKING_DIRECTORY ${CMAKE_HOME_DIRECTORY})
 
 include_directories(include)
