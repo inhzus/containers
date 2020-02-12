@@ -13,6 +13,7 @@
 #include <string>
 #include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "yaldb/thread_annotation.h"
 
@@ -27,13 +28,19 @@ std::unique_ptr<Cache<T>> NewLRUCache(size_t capacity);
 template<typename T>
 class Cache {
  public:
+  using PairType = std::pair<std::string, T>;
+  using PairPtr = std::shared_ptr<PairType>;
+  using DeleterType = std::function<void(PairType *)>;
+
+  Cache() : deleter_(std::default_delete<PairType>()) {}
+  explicit Cache(DeleterType deleter) :
+      deleter_(deleter) {}
   virtual ~Cache() = default;
   virtual void Put(const std::string &key, T value) = 0;
-  [[nodiscard]] virtual std::shared_ptr<std::pair<std::string, T>>
-  Get(const std::string &key) = 0;
-  [[nodiscard]] virtual std::shared_ptr<std::pair<std::string, T>>
-  Del(const std::string &key) = 0;
- private:
+  [[nodiscard]] virtual PairPtr Get(const std::string &key) = 0;
+  [[nodiscard]] virtual PairPtr Del(const std::string &key) = 0;
+ protected:
+  DeleterType deleter_;
 };
 
 namespace impl {
@@ -41,19 +48,22 @@ namespace impl {
 template<typename T>
 class LRUCache : public Cache<T> {
  public:
-  LRUCache() : capacity_() {}
-  explicit LRUCache(size_t capacity) : capacity_(capacity) {}
+  using PairType = typename Cache<T>::PairType;
+  using PairPtr = typename Cache<T>::PairPtr;
+  using DeleterType = typename Cache<T>::DeleterType;
+
+  LRUCache() : Cache<T>(), capacity_() {}
+  explicit LRUCache(size_t capacity) : Cache<T>(), capacity_(capacity) {}
+//  explicit LRUCache(DeleterType deleter) : Cache<T>(deleter), capacity_() {}
+  LRUCache(size_t capacity, DeleterType deleter) :
+      Cache<T>(deleter), capacity_(capacity) {}
   ~LRUCache() override = default;
   void Put(const std::string &key, T value) override;
-  std::shared_ptr<std::pair<std::string, T>>
-  Get(const std::string &key) override;
-  std::shared_ptr<std::pair<std::string, T>>
-  Del(const std::string &key) override;
+  PairPtr Get(const std::string &key) override;
+  PairPtr Del(const std::string &key) override;
   void set_capacity(size_t capacity) { capacity_ = capacity; }
 
  private:
-  using PairType = std::pair<std::string, T>;
-//  using PairPtr = std::shared_ptr<PairType>;
   using ListType = std::list<std::shared_ptr<PairType>>;
   using MapType = std::unordered_map<std::string, typename ListType::iterator>;
   size_t capacity_;
@@ -71,23 +81,30 @@ void LRUCache<T>::Put(const std::string &key, T value) {
     list_.erase(found->second);
   }
   // push new record into the list
-  list_.push_front(std::make_shared<PairType>(
-      std::make_pair(key, std::move(value))));
+//  list_.push_front(std::make_shared<PairType>(
+//      std::make_pair(key, std::move(value))));
+  auto *pair = new PairType(key, std::move(value));
+  list_.push_front(PairPtr(pair, this->deleter_));
   // update / insert
   map_.insert_or_assign(key, list_.begin());
 
   assert(list_.size() == map_.size());
   if (list_.size() > capacity_) {
     // remove oldest item in the cache
-    auto back = std::prev(list_.end());
+//    auto back = std::prev(list_.end());
+    typename ListType::iterator back;
+    for (back = std::prev(list_.end());
+        back->use_count() != 1 && back != list_.begin(); --back) {}
+    if (back->use_count() != 1) return;
     [[maybe_unused]] auto back_slot = map_.find((*back)->first);
     assert(back_slot != map_.end() && back_slot->second == back);
     map_.erase(back_slot);
-    list_.pop_back();
+//    list_.pop_back();
+    list_.erase(back);
   }
 }
 template<typename T>
-std::shared_ptr<std::pair<std::string, T>>
+typename LRUCache<T>::PairPtr
 LRUCache<T>::Get(const std::string &key) {
   std::lock_guard<std::mutex> guard(mutex_);
   auto found = map_.find(key);
@@ -99,7 +116,7 @@ LRUCache<T>::Get(const std::string &key) {
   return list_.front();
 }
 template<typename T>
-std::shared_ptr<std::pair<std::string, T>>
+typename LRUCache<T>::PairPtr
 LRUCache<T>::Del(const std::string &key) {
   std::lock_guard<std::mutex> guard(mutex_);
   auto found = map_.find(key);
@@ -113,28 +130,36 @@ LRUCache<T>::Del(const std::string &key) {
 template<typename T>
 class SharedLRUCache : public Cache<T> {
  public:
+  using PairType = typename Cache<T>::PairType;
+  using PairPtr = typename Cache<T>::PairPtr;
+  using DeleterType = typename Cache<T>::DeleterType;
+
   explicit SharedLRUCache(size_t capacity);
+  SharedLRUCache(size_t capacity, DeleterType deleter);
   ~SharedLRUCache() override = default;
   void Put(const std::string &key, T value) override;
-  std::shared_ptr<std::pair<std::string, T>>
-  Get(const std::string &key) override;
-  std::shared_ptr<std::pair<std::string, T>>
-  Del(const std::string &key) override;
+  PairPtr Get(const std::string &key) override;
+  PairPtr Del(const std::string &key) override;
  private:
   static constexpr size_t kNumShardBits = 4u;
   static constexpr size_t kNumShards = 1u << kNumShardBits;
 
   static size_t ShardHash(const std::string &key);
 
-  LRUCache<T> shard_[kNumShards];
   size_t capacity_;
+  std::vector<LRUCache<T>> shard_;
 };
 template<typename T>
-SharedLRUCache<T>::SharedLRUCache(size_t capacity) : capacity_(capacity) {
+SharedLRUCache<T>::SharedLRUCache(size_t capacity) :
+    capacity_(capacity) {
   const size_t shard_capacity = (capacity + kNumShards - 1) / kNumShards;
-  for (size_t i = 0; i < kNumShards; ++i) {
-    shard_->set_capacity(shard_capacity);
-  }
+  shard_.resize(kNumShards, LRUCache<T>(shard_capacity));
+}
+template<typename T>
+SharedLRUCache<T>::SharedLRUCache(size_t capacity, DeleterType deleter) :
+    capacity_(capacity) {
+  const size_t shard_capacity = (capacity + kNumShards - 1) / kNumShards;
+  shard_.resize(kNumShards, LRUCache<T>(shard_capacity, deleter));
 }
 template<typename T>
 void SharedLRUCache<T>::Put(const std::string &key, T value) {
@@ -142,13 +167,13 @@ void SharedLRUCache<T>::Put(const std::string &key, T value) {
   shard_[slot].Put(key, std::move(value));
 }
 template<typename T>
-std::shared_ptr<std::pair<std::string, T>>
+typename SharedLRUCache<T>::PairPtr
 SharedLRUCache<T>::Get(const std::string &key) {
   const size_t slot = ShardHash(key) & (kNumShards - 1);
   return shard_[slot].Get(key);
 }
 template<typename T>
-std::shared_ptr<std::pair<std::string, T>>
+typename SharedLRUCache<T>::PairPtr
 SharedLRUCache<T>::Del(const std::string &key) {
   const size_t slot = ShardHash(key) & (kNumShards - 1);
   return shard_[slot].Del(key);
